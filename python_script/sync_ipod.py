@@ -1,9 +1,9 @@
 import json
+import select
 import shutil
 import subprocess
 import sys
 import re
-import subprocess
 import time
 
 from pathlib import Path
@@ -16,6 +16,8 @@ PROGRESS_RE: re.Pattern[str] = re.compile(
 )
 
 PWR_LED_PATH: Path = Path("/sys/class/leds/PWR")
+RSYNC_INACTIVITY_TIMEOUT_SECONDS: float = 120.0
+RSYNC_POLL_INTERVAL_SECONDS: float = 1.0
 
 
 def start_power_led_status() -> None:
@@ -33,11 +35,25 @@ def stop_power_led_status() -> None:
 
 
 def notify_status(message: str) -> None:
-    subprocess.run(
-        ["systemd-notify", f"--status={message}"],
-        check=False,
-        text=True,
-    )
+    try:
+        subprocess.run(
+            ["systemd-notify", f"--status={message}"],
+            check=False,
+            text=True,
+        )
+    except OSError as exc:
+        print(f"unable to notify status: {exc}", flush=True)
+
+
+def stop_process(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
 
 
 def handle_rsync_line(line: str, last_notified_percent: int | None) -> int | None:
@@ -69,53 +85,96 @@ def handle_rsync_line(line: str, last_notified_percent: int | None) -> int | Non
 def sync_music(library: Path, music_dir: Path) -> None:
     music_dir.mkdir(parents=True, exist_ok=True)
 
-    process = subprocess.Popen(
-        [
-            "rsync",
-            "-rt",
-            "--delete",
-            "--inplace",
-            "--outbuf=L",
-            "--info=progress2,name0",
-            f"{library}/",
-            f"{music_dir}/",
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
+    try:
+        process: subprocess.Popen[str] = subprocess.Popen(
+            [
+                "rsync",
+                "-rt",
+                "--modify-window=2",
+                "--stats",
+                "--delete",
+                "--inplace",
+                "--outbuf=L",
+                "--info=progress2,name0",
+                f"{library}/",
+                f"{music_dir}/",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"unable to start rsync: {exc}") from exc
 
     if process.stdout is None:
+        stop_process(process)
         raise RuntimeError("unable to read rsync output")
 
     buffer: str = ""
     last_notified_percent: int | None = None
+    last_activity_time: float = time.monotonic()
 
-    while True:
-        chunk: str = process.stdout.read(1)
-
-        if chunk == "":
-            if buffer:
-                last_notified_percent = handle_rsync_line(
-                    buffer,
-                    last_notified_percent,
-                )
-            break
-
-        if chunk in {"\r", "\n"}:
-            last_notified_percent = handle_rsync_line(
-                buffer,
-                last_notified_percent,
+    try:
+        while True:
+            ready_to_read, _, _ = select.select(
+                [process.stdout],
+                [],
+                [],
+                RSYNC_POLL_INTERVAL_SECONDS,
             )
-            buffer = ""
-            continue
 
-        buffer += chunk
+            if ready_to_read:
+                chunk: str = process.stdout.read(1)
 
-    return_code: int = process.wait()
-    if return_code != 0:
-        raise RuntimeError(f"rsync failed with exit code {return_code}")
+                if chunk == "":
+                    if buffer:
+                        last_notified_percent = handle_rsync_line(
+                            buffer,
+                            last_notified_percent,
+                        )
+                    break
+
+                last_activity_time = time.monotonic()
+
+                if chunk in {"\r", "\n"}:
+                    last_notified_percent = handle_rsync_line(
+                        buffer,
+                        last_notified_percent,
+                    )
+                    buffer = ""
+                    continue
+
+                buffer += chunk
+                continue
+
+            if process.poll() is not None:
+                if buffer:
+                    last_notified_percent = handle_rsync_line(
+                        buffer,
+                        last_notified_percent,
+                    )
+                break
+
+            elapsed_without_output: float = time.monotonic() - last_activity_time
+            if elapsed_without_output >= RSYNC_INACTIVITY_TIMEOUT_SECONDS:
+                timeout_message: str = (
+                    "Music sync stalled: no rsync output for 120 seconds, aborting"
+                )
+                notify_status(timeout_message)
+                print(timeout_message, flush=True)
+                stop_process(process)
+                raise TimeoutError(timeout_message)
+
+        return_code: int = process.wait()
+        if return_code != 0:
+            raise RuntimeError(f"rsync failed with exit code {return_code}")
+
+    except Exception:
+        stop_process(process)
+        raise
+    finally:
+        process.stdout.close()
 
     notify_status("Music sync complete")
     print("music sync complete", flush=True)
@@ -124,20 +183,27 @@ def sync_music(library: Path, music_dir: Path) -> None:
 def sync_playlists(playlists: Path, playlists_dir: Path) -> None:
     allowed_extensions: set[str] = {".fpl"}
 
-    playlists_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        playlists_dir.mkdir(parents=True, exist_ok=True)
 
-    for existing_path in playlists_dir.iterdir():
-        if existing_path.is_file() and existing_path.suffix.lower() in allowed_extensions:
-            existing_path.unlink()
+        for existing_path in playlists_dir.iterdir():
+            if (
+                existing_path.is_file()
+                and existing_path.suffix.lower() in allowed_extensions
+            ):
+                existing_path.unlink()
 
-    for playlist_path in sorted(playlists.rglob("*")):
-        if not playlist_path.is_file():
-            continue
-        if playlist_path.suffix.lower() not in allowed_extensions:
-            continue
+        for playlist_path in sorted(playlists.rglob("*")):
+            if not playlist_path.is_file():
+                continue
+            if playlist_path.suffix.lower() not in allowed_extensions:
+                continue
 
-        destination_path: Path = playlists_dir / playlist_path.name
-        shutil.copy2(playlist_path, destination_path)
+            destination_path: Path = playlists_dir / playlist_path.name
+            shutil.copy2(playlist_path, destination_path)
+
+    except OSError as exc:
+        raise RuntimeError(f"playlist sync failed: {exc}") from exc
 
 
 def main() -> int:
@@ -146,16 +212,25 @@ def main() -> int:
         return ErrorCode.INVALID_USAGE_ERROR
 
     script_directory: Path = Path(__file__).resolve().parent
-    config_path: Path = Path("/etc/sync_ipod/config.json")
-    config: dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
 
-    mount: Path = Path(sys.argv[1]).resolve()
-    library_root: Path = Path(config["library_root"]).resolve()
-    music_source: Path = (library_root / config["music_source"]).resolve()
-    playlists_source: Path = (library_root / config["playlists_source"]).resolve()
-    music_dest_name: str = config["music_dest"]
-    playlists_dest_name: str = config["playlists_dest"]
-    rockbox_marker: str = config["rockbox_marker"]
+    try:
+        config_path: Path = Path("/etc/sync_ipod/config.json")
+        config: dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"unable to read config: {exc}", flush=True, file=sys.stderr)
+        return ErrorCode.UNEXISTING_FILE_ERROR
+
+    try:
+        mount: Path = Path(sys.argv[1]).resolve()
+        library_root: Path = Path(config["library_root"]).resolve()
+        music_source: Path = (library_root / config["music_source"]).resolve()
+        playlists_source: Path = (library_root / config["playlists_source"]).resolve()
+        music_dest_name: str = config["music_dest"]
+        playlists_dest_name: str = config["playlists_dest"]
+        rockbox_marker: str = config["rockbox_marker"]
+    except KeyError as exc:
+        print(f"missing config key: {exc}", flush=True, file=sys.stderr)
+        return ErrorCode.INVALID_USAGE_ERROR
 
     if not mount.exists():
         print(f"mount does not exist: {mount}", flush=True, file=sys.stderr)
@@ -177,20 +252,27 @@ def main() -> int:
     playlists_dir: Path = mount / playlists_dest_name
 
     start_power_led_status()
-    print(f"syncing music from {music_source} to {music_dir}")
-    sync_music(music_source, music_dir)
+    try:
+        print(f"syncing music from {music_source} to {music_dir}", flush=True)
+        sync_music(music_source, music_dir)
 
-    print(f"syncing playlists from {playlists_source} to {playlists_dir}")
-    sync_playlists(playlists_source, playlists_dir)
-    stop_power_led_status()
+        print(f"syncing playlists from {playlists_source} to {playlists_dir}", flush=True)
+        sync_playlists(playlists_source, playlists_dir)
+    finally:
+        stop_power_led_status()
 
-    print("successfully synced")
+    print("successfully synced", flush=True)
     return ErrorCode.NO_ERROR
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception as e:
+    except KeyboardInterrupt:
         stop_power_led_status()
-        sys.extit(1)
+        print("sync interrupted", flush=True, file=sys.stderr)
+        sys.exit(1)
+    except Exception as exc:
+        stop_power_led_status()
+        print(f"error: {exc}", flush=True, file=sys.stderr)
+        sys.exit(1)
