@@ -191,4 +191,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception as e:
+        stop_power_led_blink()
+        sys.extit(1)
