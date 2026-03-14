@@ -1,2 +1,0 @@
-sudo udevadm control --reload
-sudo syustemctl daemon-reload

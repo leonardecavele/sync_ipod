@@ -13,11 +13,11 @@ fi
 
 sleep 2
 
-mount -t vfat -o rw,utf8=1,shortname=mixed "$DEVICE" "$MOUNT_POINT"
+systemd-mount --type=vfat --options=rw,utf8=1,shortname=mixed "$DEVICE" "$MOUNT_POINT"
 
 cleanup() {
     sync || true
-    umount "$MOUNT_POINT" || true
+    systemd-mount --umount "$MOUNT_POINT" || true
 }
 trap cleanup EXIT
 
