@@ -54,7 +54,7 @@ def main() -> int:
         return ErrorCode.INVALID_USAGE_ERROR
 
     script_directory: Path = Path(__file__).resolve().parent
-    config_path: Path = script_directory / "config.json"
+    config_path: Path = Path("/etc/sync_ipod/config.json")
     config: dict[str, Any] = json.loads(config_path.read_text(encoding="utf-8"))
 
     mount: Path = Path(sys.argv[1]).resolve()
