@@ -21,8 +21,6 @@ PWR_LED_PATH: Path = Path("/sys/class/leds/PWR")
 def start_power_led_status() -> None:
     try:
         (PWR_LED_PATH / "trigger").write_text("actpwr", encoding="utf-8")
-        (PWR_LED_PATH / "delay_on").write_text("150", encoding="utf-8")
-        (PWR_LED_PATH / "delay_off").write_text("150", encoding="utf-8")
     except OSError as exc:
         print(f"unable to start PWR LED blink: {exc}", flush=True)
 
@@ -124,7 +122,7 @@ def sync_music(library: Path, music_dir: Path) -> None:
 
 
 def sync_playlists(playlists: Path, playlists_dir: Path) -> None:
-    allowed_extensions: set[str] = {".m3u8", ".fpl"}
+    allowed_extensions: set[str] = {".fpl"}
 
     playlists_dir.mkdir(parents=True, exist_ok=True)
 
