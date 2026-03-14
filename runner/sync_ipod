@@ -15,6 +15,8 @@ sleep 2
 
 systemd-mount --type=vfat --options=rw,utf8=1,shortname=mixed "$DEVICE" "$MOUNT_POINT"
 
+systemd-notify --ready --status="Mount done, starting sync"
+
 cleanup() {
     sync || true
     systemd-mount --umount "$MOUNT_POINT" || true
