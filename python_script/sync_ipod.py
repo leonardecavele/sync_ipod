@@ -50,7 +50,7 @@ def sync_playlists(playlists: Path, playlists_dir: Path) -> None:
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("usage: python3 sync_ipod.py <mount_point>", file=sys.stderr)
+        print("usage: python3 sync_ipod.py <mount_point>", flush=True, file=sys.stderr)
         return ErrorCode.INVALID_USAGE_ERROR
 
     script_directory: Path = Path(__file__).resolve().parent
@@ -66,19 +66,19 @@ def main() -> int:
     rockbox_marker: str = config["rockbox_marker"]
 
     if not mount.exists():
-        print(f"mount does not exist: {mount}", file=sys.stderr)
+        print(f"mount does not exist: {mount}", flush=True, file=sys.stderr)
         return ErrorCode.UNEXISTING_FILE_ERROR
     if not library_root.exists():
-        print(f"library root does not exist: {library_root}", file=sys.stderr)
+        print(f"library root does not exist: {library_root}", flush=True, file=sys.stderr)
         return ErrorCode.UNEXISTING_FILE_ERROR
     if not music_source.exists():
-        print(f"music source does not exist: {music_source}", file=sys.stderr)
+        print(f"music source does not exist: {music_source}", flush=True, file=sys.stderr)
         return ErrorCode.UNEXISTING_FILE_ERROR
     if not playlists_source.exists():
-        print(f"playlists source does not exist: {playlists_source}", file=sys.stderr)
+        print(f"playlists source does not exist: {playlists_source}", flush=True, file=sys.stderr)
         return ErrorCode.UNEXISTING_FILE_ERROR
     if not (mount / rockbox_marker).exists():
-        print(f"not a rockbox device: {mount}", file=sys.stderr)
+        print(f"not a rockbox device: {mount}", flush=True, file=sys.stderr)
         return ErrorCode.UNEXISTING_FILE_ERROR
 
     music_dir: Path = mount / music_dest_name
