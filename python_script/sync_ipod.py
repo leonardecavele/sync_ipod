@@ -18,16 +18,16 @@ PROGRESS_RE: re.Pattern[str] = re.compile(
 PWR_LED_PATH: Path = Path("/sys/class/leds/PWR")
 
 
-def start_power_led_blink() -> None:
+def start_power_led_status() -> None:
     try:
-        (PWR_LED_PATH / "trigger").write_text("timer", encoding="utf-8")
+        (PWR_LED_PATH / "trigger").write_text("actpwr", encoding="utf-8")
         (PWR_LED_PATH / "delay_on").write_text("150", encoding="utf-8")
         (PWR_LED_PATH / "delay_off").write_text("150", encoding="utf-8")
     except OSError as exc:
         print(f"unable to start PWR LED blink: {exc}", flush=True)
 
 
-def stop_power_led_blink() -> None:
+def stop_power_led_status() -> None:
     try:
         (PWR_LED_PATH / "trigger").write_text("none", encoding="utf-8")
     except OSError as exc:
@@ -178,13 +178,13 @@ def main() -> int:
     music_dir: Path = mount / music_dest_name
     playlists_dir: Path = mount / playlists_dest_name
 
-    start_power_led_blink()
+    start_power_led_status()
     print(f"syncing music from {music_source} to {music_dir}")
     sync_music(music_source, music_dir)
 
     print(f"syncing playlists from {playlists_source} to {playlists_dir}")
     sync_playlists(playlists_source, playlists_dir)
-    stop_power_led_blink()
+    stop_power_led_status()
 
     print("successfully synced")
     return ErrorCode.NO_ERROR
@@ -194,5 +194,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as e:
-        stop_power_led_blink()
+        stop_power_led_status()
         sys.extit(1)
