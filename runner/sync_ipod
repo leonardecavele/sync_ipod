@@ -4,34 +4,75 @@ set -euo pipefail
 DEVICE="$1"
 MOUNT_POINT="/mnt/ipod"
 PYTHON_SCRIPT="/opt/sync_ipod/sync_ipod.py"
+PWR_LED_PATH="/sys/class/leds/PWR"
+
 mounted_here=0
+unmounted_ok=0
+
+start_power_led_status() {
+    echo "actpwr" > "$PWR_LED_PATH/trigger" || true
+}
+
+stop_power_led_status() {
+    echo "none" > "$PWR_LED_PATH/trigger" || true
+}
+
+notify_status() {
+    systemd-notify --status="$1" || true
+}
+
+cleanup() {
+    local exit_status=$?
+
+    notify_status "Flushing writes"
+    sync || true
+
+    if [ "$mounted_here" -eq 1 ]; then
+        notify_status "Unmounting iPod"
+        if systemd-mount --umount "$MOUNT_POINT"; then
+            unmounted_ok=1
+            stop_power_led_status
+            notify_status "Safe to unplug"
+            echo "safe to unplug"
+        else
+            notify_status "Failed to unmount iPod"
+            echo "warning: failed to unmount $MOUNT_POINT" >&2
+        fi
+    else
+        notify_status "Sync complete, device still mounted"
+        echo "sync complete, device still mounted on $MOUNT_POINT"
+    fi
+
+    exit "$exit_status"
+}
+
+trap cleanup EXIT
 
 mkdir -p "$MOUNT_POINT"
+start_power_led_status
 
 if mountpoint -q "$MOUNT_POINT"; then
     mounted_source="$(findmnt -nro SOURCE --target "$MOUNT_POINT")"
 
     if [ "$mounted_source" != "$DEVICE" ]; then
         echo "$MOUNT_POINT is mounted with $mounted_source, unmounting it first"
+        notify_status "Unmounting previous device from $MOUNT_POINT"
         systemd-mount --umount "$MOUNT_POINT"
+
+        notify_status "Mounting $DEVICE"
         systemd-mount --type=vfat --options=rw,utf8=1,shortname=mixed "$DEVICE" "$MOUNT_POINT"
         mounted_here=1
         sleep 2
     else
         echo "$DEVICE is already mounted on $MOUNT_POINT, reusing it"
+        notify_status "Reusing existing mount for $DEVICE"
     fi
 else
+    notify_status "Mounting $DEVICE"
     systemd-mount --type=vfat --options=rw,utf8=1,shortname=mixed "$DEVICE" "$MOUNT_POINT"
     mounted_here=1
     sleep 2
 fi
 
-cleanup() {
-    sync || true
-    if [ "$mounted_here" -eq 1 ]; then
-        systemd-mount --umount "$MOUNT_POINT" || true
-    fi
-}
-trap cleanup EXIT
-
+notify_status "Starting sync"
 python3 -u "$PYTHON_SCRIPT" "$MOUNT_POINT"
