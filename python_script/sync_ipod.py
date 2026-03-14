@@ -2,31 +2,107 @@ import json
 import shutil
 import subprocess
 import sys
+import re
+import subprocess
+import time
 
 from pathlib import Path
 from typing import Any
 
 from error import ErrorCode
 
+PROGRESS_RE: re.Pattern[str] = re.compile(
+    r"^\s*(?P<size>\S+)\s+(?P<percent>\d+)%\s+(?P<speed>\S+)\s+(?P<eta>\S+)"
+)
+
+
+def notify_status(message: str) -> None:
+    subprocess.run(
+        ["systemd-notify", f"--status={message}"],
+        check=False,
+        text=True,
+    )
+
+
+def handle_rsync_line(line: str, last_notified_percent: int | None) -> int | None:
+    cleaned_line: str = line.strip()
+    if not cleaned_line:
+        return last_notified_percent
+
+    match = PROGRESS_RE.match(cleaned_line)
+    if match is not None:
+        percent: int = int(match.group("percent"))
+        size: str = match.group("size")
+        speed: str = match.group("speed")
+        eta: str = match.group("eta")
+
+        if percent != last_notified_percent:
+            message: str = (
+                f"Syncing music: {percent}% - {size} copied - {speed} - ETA {eta}"
+            )
+            notify_status(message)
+            print(message, flush=True)
+            return percent
+
+        return last_notified_percent
+
+    print(cleaned_line, flush=True)
+    return last_notified_percent
+
 
 def sync_music(library: Path, music_dir: Path) -> None:
     music_dir.mkdir(parents=True, exist_ok=True)
 
-    result = subprocess.run(
+    process = subprocess.Popen(
         [
             "rsync",
             "-rt",
             "--delete",
-            "--human-readable",
             "--inplace",
-            "--info=stats2,name0",
+            "--outbuf=L",
+            "--info=progress2,name0",
             f"{library}/",
             f"{music_dir}/",
         ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         text=True,
+        bufsize=1,
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"rsync failed with exit code {result.returncode}")
+
+    if process.stdout is None:
+        raise RuntimeError("unable to read rsync output")
+
+    buffer: str = ""
+    last_notified_percent: int | None = None
+
+    while True:
+        chunk: str = process.stdout.read(1)
+
+        if chunk == "":
+            if buffer:
+                last_notified_percent = handle_rsync_line(
+                    buffer,
+                    last_notified_percent,
+                )
+            break
+
+        if chunk in {"\r", "\n"}:
+            last_notified_percent = handle_rsync_line(
+                buffer,
+                last_notified_percent,
+            )
+            buffer = ""
+            continue
+
+        buffer += chunk
+
+    return_code: int = process.wait()
+    if return_code != 0:
+        raise RuntimeError(f"rsync failed with exit code {return_code}")
+
+    notify_status("Music sync complete")
+    print("music sync complete", flush=True)
 
 
 def sync_playlists(playlists: Path, playlists_dir: Path) -> None:

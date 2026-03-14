@@ -3,5 +3,6 @@ Description=Syncing Ipod (/dev/%I)
 After=systemd-udevd.service
 
 [Service]
-Type=oneshot
+Type=notify
+NotifyAccess=main
 ExecStart=/usr/local/bin/sync_ipod /dev/%I

@@ -21,4 +21,4 @@ cleanup() {
 }
 trap cleanup EXIT
 
-python3 "$PYTHON_SCRIPT" "$MOUNT_POINT"
+python3 -u "$PYTHON_SCRIPT" "$MOUNT_POINT"

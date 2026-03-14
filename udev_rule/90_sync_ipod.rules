@@ -1,1 +1,3 @@
-ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_VENDOR}=="Apple", ENV{ID_MODEL}=="iPod", ENV{ID_FS_TYPE}=="vfat", ENV{ID_SERIAL_SHORT}=="000A27001624F18A", TAG+="systemd", ENV{SYSTEMD_WANTS}+="sync_ipod@%k.service"
+ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_VENDOR}=="Apple", ENV{ID_MODEL}=="iPod", ENV{ID_FS_TYPE}=="vfat", TAG+="systemd", ENV{SYSTEMD_WANTS}+="sync_ipod@%k.service"
+
+ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_VENDOR}=="TOSHIBA", ENV{ID_MODEL}=="MK8010GAH", ENV{ID_FS_TYPE}=="vfat", TAG+="systemd", ENV{SYSTEMD_WANTS}+="sync_ipod@%k.service"
