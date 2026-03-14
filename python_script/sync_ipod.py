@@ -36,11 +36,15 @@ def stop_power_led_status() -> None:
 
 def notify_status(message: str) -> None:
     try:
-        subprocess.run(
-            ["systemd-notify", f"--status={message}"],
+        result = subprocess.run(
+            ["systemd-notify", "--pid=parent", f"--status={message}"],
             check=False,
-            text=True,
         )
+        if result.returncode != 0:
+            print(
+                f"systemd-notify failed with exit code {result.returncode}",
+                flush=True,
+            )
     except OSError as exc:
         print(f"unable to notify status: {exc}", flush=True)
 
