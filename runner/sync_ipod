@@ -19,6 +19,8 @@ stop_power_led_in_script() {
 
 start_power_led_script_error() {
     echo "timer" > "$PWR_LED_PATH/trigger" || true
+    echo "1842" > "$PWR_LED_PATH/delay_on" || true
+    echo "1842" > "$PWR_LED_PATH/delay_off" || true
 }
 
 notify_status() {
