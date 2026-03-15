@@ -18,7 +18,7 @@ stop_power_led_in_script() {
 }
 
 start_power_led_script_error() {
-    echo "heartbeat" > "$PWR_LED_PATH/trigger" || true
+    echo "timer" > "$PWR_LED_PATH/trigger" || true
 }
 
 notify_status() {
