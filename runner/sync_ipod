@@ -8,15 +8,15 @@ PWR_LED_PATH="/sys/class/leds/PWR"
 
 mounted_here=0
 
-start_power_led_in_script() {
+start_power_led_busy() {
     echo "actpwr" > "$PWR_LED_PATH/trigger" || true
 }
 
-stop_power_led_in_script() {
+stop_power_led_busy() {
     echo "none" > "$PWR_LED_PATH/trigger" || true
 }
 
-start_power_led_script_error() {
+start_power_led_error() {
     echo "timer" > "$PWR_LED_PATH/trigger" || true
     echo "3000" > "$PWR_LED_PATH/delay_on" || true
     echo "200" > "$PWR_LED_PATH/delay_off" || true
@@ -67,11 +67,11 @@ cleanup() {
         fi
 
         if unmount_ipod; then
-            stop_power_led_in_script
+            stop_power_led_busy
             notify_status "Safe to unplug"
             echo "safe to unplug"
         else
-            start_power_led_script_error
+            start_power_led_error
             notify_status "Failed to unmount iPod"
             echo "warning: failed to unmount $MOUNT_POINT" >&2
         fi
@@ -80,7 +80,7 @@ cleanup() {
             notify_status "Sync complete, device still mounted"
             echo "sync complete, device still mounted on $MOUNT_POINT"
         else
-            start_power_led_script_error
+            start_power_led_error
             notify_status "Sync failed, device still mounted"
             echo "warning: sync failed, device still mounted on $MOUNT_POINT" >&2
         fi
@@ -92,7 +92,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$MOUNT_POINT"
-start_power_led_in_script
+start_power_led_busy
 
 if mountpoint -q "$MOUNT_POINT"; then
     mounted_source="$(findmnt -nro SOURCE --target "$MOUNT_POINT")"
