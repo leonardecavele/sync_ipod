@@ -16,7 +16,7 @@ PROGRESS_RE: re.Pattern[str] = re.compile(
 )
 
 PWR_LED_PATH: Path = Path("/sys/class/leds/PWR")
-RSYNC_INACTIVITY_TIMEOUT_SECONDS: float = 120.0
+RSYNC_INACTIVITY_TIMEOUT_SECONDS: float = 240.0
 RSYNC_POLL_INTERVAL_SECONDS: float = 1.0
 
 
@@ -38,12 +38,19 @@ def notify_status(message: str) -> None:
 def stop_process(process: subprocess.Popen[str]) -> None:
     if process.poll() is not None:
         return
+
     process.terminate()
     try:
         process.wait(timeout=5)
+        return
     except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
+        pass
+
+    process.kill()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        print("process did not exit after SIGKILL", flush=True)
 
 
 def handle_rsync_line(line: str, last_notified_percent: int | None) -> int | None:

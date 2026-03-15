@@ -7,7 +7,6 @@ PYTHON_SCRIPT="/opt/sync_ipod/sync_ipod.py"
 PWR_LED_PATH="/sys/class/leds/PWR"
 
 mounted_here=0
-unmounted_ok=0
 
 start_power_led_in_script() {
     echo "actpwr" > "$PWR_LED_PATH/trigger" || true
@@ -27,27 +26,64 @@ notify_status() {
     systemd-notify --status="$1" || true
 }
 
+flush_writes() {
+    notify_status "Flushing writes"
+    if timeout 15s sync; then
+        return 0
+    fi
+
+    echo "warning: timed out while flushing writes" >&2
+    return 1
+}
+
+unmount_ipod() {
+    notify_status "Unmounting iPod"
+
+    if timeout 10s systemd-mount --umount "$MOUNT_POINT"; then
+        return 0
+    fi
+
+    echo "warning: systemd-mount --umount timed out or failed, trying lazy unmount" >&2
+
+    if timeout 5s umount -l "$MOUNT_POINT"; then
+        echo "warning: lazy unmount used for $MOUNT_POINT" >&2
+        return 0
+    fi
+
+    return 1
+}
+
 cleanup() {
     local exit_status=$?
 
-    notify_status "Flushing writes"
-    sync || true
+    trap - EXIT
 
     if [ "$mounted_here" -eq 1 ]; then
-        notify_status "Unmounting iPod"
-        if systemd-mount --umount "$MOUNT_POINT"; then
-            unmounted_ok=1
+        if [ "$exit_status" -eq 0 ]; then
+            flush_writes || true
+        else
+            notify_status "Sync failed, skipping final flush"
+            echo "warning: sync failed, skipping final flush" >&2
+        fi
+
+        if unmount_ipod; then
             stop_power_led_in_script
             notify_status "Safe to unplug"
             echo "safe to unplug"
         else
-			start_power_led_script_error
+            start_power_led_script_error
             notify_status "Failed to unmount iPod"
             echo "warning: failed to unmount $MOUNT_POINT" >&2
         fi
     else
-        notify_status "Sync complete, device still mounted"
-        echo "sync complete, device still mounted on $MOUNT_POINT"
+        if [ "$exit_status" -eq 0 ]; then
+            notify_status "Sync complete, device still mounted"
+            echo "sync complete, device still mounted on $MOUNT_POINT"
+        else
+            start_power_led_script_error
+            notify_status "Sync failed, device still mounted"
+            echo "warning: sync failed, device still mounted on $MOUNT_POINT" >&2
+        fi
     fi
 
     exit "$exit_status"
@@ -64,7 +100,11 @@ if mountpoint -q "$MOUNT_POINT"; then
     if [ "$mounted_source" != "$DEVICE" ]; then
         echo "$MOUNT_POINT is mounted with $mounted_source, unmounting it first"
         notify_status "Unmounting previous device from $MOUNT_POINT"
-        systemd-mount --umount "$MOUNT_POINT"
+
+        if ! timeout 10s systemd-mount --umount "$MOUNT_POINT"; then
+            echo "warning: previous unmount failed or timed out, trying lazy unmount" >&2
+            timeout 5s umount -l "$MOUNT_POINT" || true
+        fi
 
         notify_status "Mounting $DEVICE"
         systemd-mount --type=vfat --options=rw,utf8=1,shortname=mixed "$DEVICE" "$MOUNT_POINT"
