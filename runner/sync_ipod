@@ -9,12 +9,16 @@ PWR_LED_PATH="/sys/class/leds/PWR"
 mounted_here=0
 unmounted_ok=0
 
-start_power_led_status() {
+start_power_led_in_script() {
     echo "actpwr" > "$PWR_LED_PATH/trigger" || true
 }
 
-stop_power_led_status() {
+stop_power_led_in_script() {
     echo "none" > "$PWR_LED_PATH/trigger" || true
+}
+
+start_power_led_script_error() {
+    echo "heartbeat" > "$PWR_LED_PATH/trigger" || true
 }
 
 notify_status() {
@@ -31,10 +35,11 @@ cleanup() {
         notify_status "Unmounting iPod"
         if systemd-mount --umount "$MOUNT_POINT"; then
             unmounted_ok=1
-            stop_power_led_status
+            stop_power_led_in_script
             notify_status "Safe to unplug"
             echo "safe to unplug"
         else
+			start_power_led_script_error
             notify_status "Failed to unmount iPod"
             echo "warning: failed to unmount $MOUNT_POINT" >&2
         fi
@@ -49,7 +54,7 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$MOUNT_POINT"
-start_power_led_status
+start_power_led_in_script
 
 if mountpoint -q "$MOUNT_POINT"; then
     mounted_source="$(findmnt -nro SOURCE --target "$MOUNT_POINT")"
