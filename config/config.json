@@ -2,7 +2,7 @@
   "library_root": "/srv/files/music",
   "music_source": "files",
   "playlists_source": ".",
-  "music_dest": "Music",
-  "playlists_dest": "Playlists",
+  "music_dest": "Music/files",
+  "playlists_dest": "Music/.",
   "rockbox_marker": ".rockbox"
 }

@@ -171,7 +171,7 @@ def sync_music(library: Path, music_dir: Path) -> None:
 
 
 def sync_playlists(playlists: Path, playlists_dir: Path) -> None:
-    allowed_extensions: set[str] = {".fpl"}
+    allowed_extensions: set[str] = {".m3u8"}
 
     try:
         playlists_dir.mkdir(parents=True, exist_ok=True)
